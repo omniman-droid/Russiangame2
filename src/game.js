@@ -14,64 +14,6 @@ const WORLD_WIDTH = 18000;
 const TILE = 32;
 const GRAVITY = 1800;
 const DAY_SECONDS = 360;
-const SPRITES = {};
-
-const SPRITE_PATHS = {
-  snow: "assets/sprites/terrain/snow_base.svg",
-  rock: "assets/sprites/terrain/rock_base.svg",
-  bunkerWall: "assets/sprites/buildings/bunker_wall.svg",
-  bunkerDoor: "assets/sprites/buildings/bunker_door_closed.svg",
-  player: "assets/sprites/characters/player_body.svg",
-  scav: "assets/sprites/characters/scav_body.svg",
-  arm: "assets/sprites/characters/player_arm.svg",
-  muzzle: "assets/sprites/effects/muzzle_flash.svg",
-  impact: "assets/sprites/effects/impact.svg",
-  blood: "assets/sprites/effects/blood.svg",
-  crosshair: "assets/sprites/ui/crosshair.svg",
-  item: {
-    scrap: "assets/sprites/items/scrap.svg",
-    money: "assets/sprites/items/money.svg",
-    metalFragments: "assets/sprites/items/stone.svg",
-    wood: "assets/sprites/items/wood.svg",
-    stone: "assets/sprites/items/stone.svg",
-    sulfur: "assets/sprites/items/sulfur.svg",
-    cloth: "assets/sprites/items/weapon_parts.svg",
-    weaponParts: "assets/sprites/items/weapon_parts.svg",
-    meds: "assets/sprites/items/meds.svg",
-    food: "assets/sprites/items/food.svg",
-    water: "assets/sprites/items/water.svg",
-    pistolAmmo: "assets/sprites/items/pistol_ammo.svg",
-    smgAmmo: "assets/sprites/items/smg_ammo.svg",
-    rifleAmmo: "assets/sprites/items/rifle_ammo.svg",
-    shotgunAmmo: "assets/sprites/items/shotgun_ammo.svg",
-    sniperAmmo: "assets/sprites/items/sniper_ammo.svg",
-  },
-};
-
-function loadSprite(path) {
-  const img = new Image();
-  img.src = path;
-  return img;
-}
-
-function bootSprites() {
-  Object.entries(SPRITE_PATHS).forEach(([k, v]) => {
-    if (typeof v === "string") {
-      SPRITES[k] = loadSprite(v);
-    } else {
-      SPRITES[k] = {};
-      Object.entries(v).forEach(([nk, nv]) => { SPRITES[k][nk] = loadSprite(nv); });
-    }
-  });
-}
-
-function drawSprite(sprite, x, y, w, h, fallback = "#fff") {
-  if (sprite && sprite.complete) ctx.drawImage(sprite, x, y, w, h);
-  else {
-    ctx.fillStyle = fallback;
-    ctx.fillRect(x, y, w, h);
-  }
-}
 
 const WEAPONS = {
   rock: { label: "Rock", damage: 18, range: 58, cooldown: 0.45, ammoType: null, mag: 1, spread: 0 },
@@ -99,6 +41,33 @@ const RECIPES = [
 function rand(min, max) { return Math.random() * (max - min) + min; }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
 function distSq(ax, ay, bx, by) { const dx = ax - bx; const dy = ay - by; return dx * dx + dy * dy; }
+
+const keys = new Set();
+const mouse = { x: 0, y: 0, down: false };
+
+const WORLD_WIDTH = 12000;
+const TILE = 32;
+const GRAVITY = 1700;
+
+const WEAPONS = {
+  pistol: { label: "Pistol", damage: 23, range: 620, cooldown: 0.2, mag: 12, ammoType: "pistolAmmo", spread: 0.03 },
+  rifle: { label: "Rifle", damage: 35, range: 900, cooldown: 0.15, mag: 30, ammoType: "rifleAmmo", spread: 0.015 },
+  shotgun: { label: "Shotgun", damage: 18, range: 450, cooldown: 0.65, mag: 6, ammoType: "shotgunAmmo", spread: 0.16, pellets: 7 },
+};
+
+function rand(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function distSq(ax, ay, bx, by) {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return dx * dx + dy * dy;
+}
 
 class Terrain {
   constructor() {
@@ -137,6 +106,26 @@ class Terrain {
       const x = rand(80, WORLD_WIDTH - 80);
       const type = nodeTypes[Math.floor(rand(0, nodeTypes.length))];
       this.nodes.push({ x, y: this.heightAt(x) - 14, type, hp: type === "barrel" ? 40 : 65 });
+    let h = 440;
+    for (let i = 0; i <= cols; i += 1) {
+      const t = i / cols;
+      const mountain = Math.sin(t * 22) * 120 + Math.sin(t * 4) * 90;
+      const noise = Math.sin(t * 91) * 18 + rand(-12, 12);
+      h += rand(-8, 8);
+      h = clamp(h, 250, 610);
+      this.heights.push(clamp(h + mountain + noise, 220, 650));
+    }
+
+    for (let i = 0; i < 12; i += 1) {
+      const x = rand(400, WORLD_WIDTH - 500);
+      const y = this.heightAt(x) - 8;
+      this.bunkers.push({ x, y, w: 78, h: 24, id: i });
+    }
+
+    for (let i = 0; i < 24; i += 1) {
+      const x = rand(180, WORLD_WIDTH - 220);
+      const y = this.heightAt(x) - 75;
+      this.buildings.push({ x, y, w: 90, h: 75 });
     }
   }
 
@@ -172,13 +161,43 @@ class Terrain {
     ctx.fill();
 
     // ground
-    for (let x = viewLeft - TILE; x <= viewRight + TILE; x += TILE) {
+    ctx.fillStyle = `rgba(236, 245, 255, ${0.95 * light})`;
+  draw(cameraX) {
+    const viewLeft = cameraX;
+    const viewRight = cameraX + canvas.width;
+
+    ctx.fillStyle = "#d7edff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.fillStyle = "#bddcf7";
+    for (let i = 0; i < 9; i += 1) {
+      const y = 70 + i * 36;
+      ctx.fillRect(((i * 580 - cameraX * 0.2) % 1800) - 300, y, 900, 28);
+    }
+
+    ctx.fillStyle = "#8ea1b0";
+    ctx.beginPath();
+    for (let x = viewLeft; x <= viewRight + TILE; x += TILE) {
+      const sx = x - cameraX;
+      const y = this.heightAt(x) - 70;
+      if (x === viewLeft) ctx.moveTo(sx, y);
+      else ctx.lineTo(sx, y);
+    }
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#f7fbff";
+    ctx.beginPath();
+    for (let x = viewLeft; x <= viewRight + TILE; x += TILE) {
       const sx = x - cameraX;
       const y = this.heightAt(x);
-      for (let py = y; py < canvas.height; py += TILE) {
-        drawSprite(SPRITES.snow, sx, py, TILE, TILE, `rgba(236, 245, 255, ${0.95 * light})`);
-      }
+      if (x === viewLeft) ctx.moveTo(sx, y); else ctx.lineTo(sx, y);
     }
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.fill();
 
     // safe zone
     const sz = this.safeZone;
@@ -198,15 +217,36 @@ class Terrain {
       ctx.fillRect(sx + b.w * 0.65, b.y + 20, 20, b.h - 20);
       ctx.fillStyle = "#7c8795";
       ctx.fillRect(sx + 8, b.y + 12, 24, 12);
+      if (x === viewLeft) ctx.moveTo(sx, y);
+      else ctx.lineTo(sx, y);
+    }
+    ctx.lineTo(canvas.width, canvas.height);
+    ctx.lineTo(0, canvas.height);
+    ctx.closePath();
+    ctx.fill();
+
+    for (const b of this.buildings) {
+      if (b.x + b.w < viewLeft || b.x > viewRight) continue;
+      const sx = b.x - cameraX;
+      ctx.fillStyle = "#4a4c50";
+      ctx.fillRect(sx, b.y, b.w, b.h);
+      ctx.fillStyle = "#5e6268";
+      ctx.fillRect(sx + 5, b.y + 6, b.w - 10, 14);
+      ctx.fillStyle = "#9ea7b3";
+      ctx.fillRect(sx + 12, b.y + 25, 20, 14);
+      ctx.fillStyle = "#2f3338";
+      ctx.fillRect(sx + b.w - 28, b.y + 24, 18, b.h - 24);
     }
 
     for (const b of this.bunkers) {
       if (b.x + b.w < viewLeft || b.x > viewRight) continue;
       const sx = b.x - cameraX;
-      drawSprite(SPRITES.bunkerWall, sx, b.y, b.w, b.h, "#5a6472");
+      ctx.fillStyle = "#5a6472";
+      ctx.fillRect(sx, b.y, b.w, b.h);
       ctx.fillStyle = "#262c33";
       ctx.fillRect(sx + 10, b.y + 3, b.w - 20, b.h - 6);
-      drawSprite(SPRITES.bunkerDoor, sx + b.w / 2 - 6, b.y + 5, 12, 13, "#8f97a5");
+      ctx.fillStyle = "#8f97a5";
+      ctx.fillRect(sx + b.w / 2 - 4, b.y + 6, 8, 10);
     }
 
     for (const n of this.nodes) {
@@ -227,12 +267,19 @@ class Terrain {
         ctx.fillStyle = "#7c5b4a";
         ctx.fillRect(sx - 10, n.y - 18, 20, 18);
       }
+      ctx.fillStyle = "#59616b";
+      ctx.fillRect(sx, b.y, b.w, b.h);
+      ctx.fillStyle = "#2f353d";
+      ctx.fillRect(sx + 8, b.y + 2, b.w - 16, b.h - 4);
+      ctx.fillStyle = "#8e97a3";
+      ctx.fillRect(sx + b.w / 2 - 5, b.y + 7, 10, 10);
     }
   }
 }
 
 class Actor {
   constructor(x, y, kind = "scav") {
+  constructor(x, y, team = "scav") {
     this.x = x;
     this.y = y;
     this.vx = 0;
@@ -243,7 +290,6 @@ class Actor {
     this.hp = 100;
     this.kind = kind;
     this.dead = false;
-    this.deathRecorded = false;
     this.respawnTimer = 0;
     this.facing = 1;
     this.crouching = false;
@@ -253,7 +299,6 @@ class Actor {
     this.armor = 0;
     this.bounty = 0;
     this.coldRes = 0;
-    this.lastDamageCause = "unknown";
     this.inventory = {
       wood: 0, stone: 0, sulfur: 0, cloth: 0,
       scrap: 0, metalFragments: 0, weaponParts: 0,
@@ -266,6 +311,34 @@ class Actor {
 
   get centerX() { return this.x + this.w / 2; }
   get centerY() { return this.y + this.h / 2; }
+    this.hp = 100;
+    this.maxHp = 100;
+    this.team = team;
+    this.facing = 1;
+    this.crouching = false;
+    this.weapon = "pistol";
+    this.mag = WEAPONS[this.weapon].mag;
+    this.cooldown = 0;
+    this.dead = false;
+    this.respawnTimer = 0;
+    this.inventory = {
+      scrap: 30,
+      money: 100,
+      meds: 2,
+      pistolAmmo: 72,
+      rifleAmmo: 60,
+      shotgunAmmo: 18,
+      weaponParts: 3,
+    };
+  }
+
+  get centerX() {
+    return this.x + this.w / 2;
+  }
+
+  get centerY() {
+    return this.y + this.h / 2;
+  }
 
   equip(weapon) {
     if (!WEAPONS[weapon]) return;
@@ -273,6 +346,7 @@ class Actor {
     const magSize = WEAPONS[weapon].mag;
     this.mag = clamp(this.mag, 0, magSize);
     if (weapon === "rock") this.mag = 1;
+    this.mag = clamp(this.mag, 0, WEAPONS[weapon].mag);
   }
 
   reload() {
@@ -286,10 +360,9 @@ class Actor {
     this.inventory[def.ammoType] -= take;
   }
 
-  hit(amount, cause = "damage") {
+  hit(amount) {
     if (this.dead) return;
     const dmg = Math.max(1, amount * (1 - this.armor));
-    this.lastDamageCause = cause;
     this.hp -= dmg;
     if (this.hp <= 0) {
       this.hp = 0;
@@ -299,22 +372,60 @@ class Actor {
   }
 
   draw(cameraX, angle, color, name) {
+    const needed = def.mag - this.mag;
+    if (needed <= 0) return;
+    const available = this.inventory[def.ammoType];
+    const load = Math.min(available, needed);
+    if (load > 0) {
+      this.mag += load;
+      this.inventory[def.ammoType] -= load;
+    }
+  }
+
+  damage(amount) {
+    if (this.dead) return;
+    this.hp -= amount;
+    if (this.hp <= 0) {
+      this.dead = true;
+      this.respawnTimer = 4;
+      this.hp = 0;
+    }
+  }
+
+  draw(cameraX, armAngle, color = "#111") {
     const sx = this.x - cameraX;
     const h = this.crouching ? this.h - 16 : this.h;
     const y = this.y + (this.crouching ? 16 : 0);
 
-    const sprite = this.kind === "player" ? SPRITES.player : SPRITES.scav;
-    drawSprite(sprite, sx, y, this.w, h, this.dead ? "#8f2436" : color);
+    ctx.fillStyle = this.dead ? "#8f2436" : color;
+    ctx.fillStyle = this.dead ? "#a01f2f" : color;
+    ctx.fillRect(sx, y, this.w, h);
 
     const shoulderX = sx + this.w / 2;
     const shoulderY = y + 18;
-    const handX = shoulderX + Math.cos(angle) * 9 - 11;
-    const handY = shoulderY + Math.sin(angle) * 9 - 3;
-    drawSprite(SPRITES.arm, handX, handY, 22, 6, "#efd8c3");
+    ctx.strokeStyle = "#efd8c3";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY);
+    ctx.lineTo(shoulderX + Math.cos(angle) * 22, shoulderY + Math.sin(angle) * 22);
+    ctx.stroke();
+
+    ctx.fillStyle = "#2d3237";
+    ctx.fillRect(shoulderX + Math.cos(angle) * 9 - 11, shoulderY + Math.sin(angle) * 9 - 3, 22, 6);
 
     ctx.fillStyle = "#d9e9ff";
     ctx.font = "11px monospace";
     ctx.fillText(name, sx - 4, y - 6);
+    const armLen = 21;
+    ctx.strokeStyle = "#f3d7c6";
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.moveTo(shoulderX, shoulderY);
+    ctx.lineTo(shoulderX + Math.cos(armAngle) * armLen, shoulderY + Math.sin(armAngle) * armLen);
+    ctx.stroke();
+
+    ctx.fillStyle = "#2f3136";
+    ctx.fillRect(shoulderX + Math.cos(armAngle) * 8 - 10, shoulderY + Math.sin(armAngle) * 8 - 3, 20, 6);
   }
 }
 
@@ -346,22 +457,39 @@ class Game {
     this.droppedBags = [];
     this.structures = [];
     this.scavs = [];
-    this.cars = [];
-    this.planes = [];
-    this.explosions = [];
-    this.deathLog = [];
-    this.bunkerBlueprints = {};
 
     this.stats = { hunger: 100, thirst: 100, cold: 0, radiation: 0 };
-    this.selectedRecipe = 0;
 
     this.spawnScavs(36);
     this.spawnLoot(170);
-    this.spawnCars(20);
-    this.spawnPlanes(4);
     this.last = performance.now();
 
     requestAnimationFrame(this.loop.bind(this));
+    this.player = new Actor(220, 150, "player");
+    this.player.inventory = {
+      scrap: 45,
+      money: 250,
+      meds: 3,
+      pistolAmmo: 120,
+      rifleAmmo: 90,
+      shotgunAmmo: 24,
+      weaponParts: 5,
+    };
+    this.player.equip("rifle");
+    this.player.mag = 30;
+
+    this.scavs = [];
+    this.loot = [];
+    this.effects = [];
+    this.insideBunker = null;
+    this.cameraX = 0;
+    this.last = performance.now();
+
+    this.spawnScavs(20);
+    this.spawnLoot(90);
+
+    this.loop = this.loop.bind(this);
+    requestAnimationFrame(this.loop);
   }
 
   spawnScavs(count) {
@@ -380,6 +508,13 @@ class Game {
       s.inventory.smgAmmo = Math.floor(rand(0, 60));
       s.inventory.shotgunAmmo = Math.floor(rand(0, 20));
       s.inventory.food = Math.floor(rand(0, 3));
+      const x = rand(100, WORLD_WIDTH - 100);
+      const y = this.terrain.heightAt(x) - 54;
+      const s = new Actor(x, y, "scav");
+      s.equip(Math.random() > 0.65 ? "rifle" : "pistol");
+      s.mag = WEAPONS[s.weapon].mag;
+      s.inventory.money = Math.floor(rand(20, 120));
+      s.inventory.scrap = Math.floor(rand(10, 80));
       this.scavs.push(s);
     }
   }
@@ -390,50 +525,6 @@ class Game {
       const x = rand(80, WORLD_WIDTH - 80);
       this.loot.push({ x, y: this.terrain.heightAt(x) - 10, type: items[Math.floor(rand(0, items.length))], amount: Math.floor(rand(6, 26)) });
     }
-  }
-
-  spawnCars(count) {
-    for (let i = 0; i < count; i += 1) {
-      const x = rand(200, WORLD_WIDTH - 200);
-      this.cars.push({
-        x,
-        y: this.terrain.heightAt(x) - 18,
-        vx: rand(70, 180) * (Math.random() > 0.5 ? 1 : -1),
-        hp: 100,
-        crashed: false,
-        fireTimer: 0,
-      });
-    }
-  }
-
-  spawnPlanes(count) {
-    for (let i = 0; i < count; i += 1) {
-      const fromLeft = Math.random() > 0.5;
-      this.planes.push({
-        x: fromLeft ? -rand(100, 1200) : WORLD_WIDTH + rand(100, 1200),
-        y: rand(90, 240),
-        vx: fromLeft ? rand(210, 320) : -rand(210, 320),
-        hp: 100,
-        crashing: false,
-        vy: 0,
-        crashTargetX: rand(300, WORLD_WIDTH - 300),
-      });
-    }
-  }
-
-  bunkerBlueprint(id, level) {
-    const key = `${id}:${level}`;
-    if (this.bunkerBlueprints[key]) return this.bunkerBlueprints[key];
-    const rooms = 4 + ((id + level) % 3);
-    const traps = [];
-    const crates = [];
-    for (let i = 0; i < rooms; i += 1) {
-      if ((i + id + level) % 2 === 0) traps.push({ x: 210 + i * 180, w: 36, dmg: 24 + level * 6 });
-      crates.push({ x: 170 + i * 185, looted: false, tier: 1 + ((i + id + level) % 3) });
-    }
-    const out = { rooms, traps, crates, tint: (id * 37 + level * 23) % 70 };
-    this.bunkerBlueprints[key] = out;
-    return out;
   }
 
   onGround(actor) {
@@ -476,10 +567,9 @@ class Game {
       this.stats.radiation = clamp(this.stats.radiation - dt * 1.2, 0, 100);
     }
 
-    if (this.stats.hunger <= 0) this.player.hit(7 * dt, "starvation");
-    if (this.stats.thirst <= 0) this.player.hit(9 * dt, "dehydration");
-    if (this.stats.cold > 80) this.player.hit(6 * dt, "hypothermia");
-    if (this.stats.radiation > 92) this.player.hit(10 * dt, "radiation poisoning");
+    if (this.stats.hunger <= 0 || this.stats.thirst <= 0 || this.stats.cold > 80 || this.stats.radiation > 92) {
+      this.player.hit(5 * dt);
+    }
 
     if (keys.has("Digit8") && this.player.inventory.food > 0) {
       this.player.inventory.food -= 1;
@@ -499,6 +589,11 @@ class Game {
       this.stats.radiation = clamp(this.stats.radiation - 20, 0, 100);
       this.setNote("Used meds (+hp, -radiation)");
       keys.delete("Digit0");
+    const types = ["scrap", "money", "pistolAmmo", "rifleAmmo", "shotgunAmmo", "meds", "weaponParts"];
+    for (let i = 0; i < count; i += 1) {
+      const x = rand(80, WORLD_WIDTH - 80);
+      const y = this.terrain.heightAt(x) - 10;
+      this.loot.push({ x, y, type: types[Math.floor(rand(0, types.length))], amount: Math.floor(rand(4, 25)) });
     }
   }
 
@@ -506,6 +601,7 @@ class Game {
     if (this.player.dead) return;
 
     const speed = this.player.crouching ? 130 : 240;
+    const speed = this.player.crouching ? 130 : 230;
     if (keys.has("KeyA")) {
       this.player.vx = -speed;
       this.player.facing = -1;
@@ -542,18 +638,22 @@ class Game {
       this.placeStructure();
     }
 
-    if (keys.has("BracketLeft")) { keys.delete("BracketLeft"); this.selectedRecipe = (this.selectedRecipe - 1 + RECIPES.length) % RECIPES.length; }
-    if (keys.has("BracketRight")) { keys.delete("BracketRight"); this.selectedRecipe = (this.selectedRecipe + 1) % RECIPES.length; }
-    if (keys.has("KeyV")) { keys.delete("KeyV"); this.tryCraft(this.selectedRecipe); }
+    if (keys.has("KeyC")) {
+      keys.delete("KeyC");
+      this.tryCraft();
+
+    if (keys.has("KeyE")) this.tryShoot(this.player);
+    if (keys.has("KeyR")) this.player.reload();
+
+    if (keys.has("KeyF")) {
+      keys.delete("KeyF");
+      this.toggleBunker();
+    }
 
     this.player.vy += GRAVITY * dt;
     this.player.x += this.player.vx * dt;
     this.player.y += this.player.vy * dt;
-    const preCollideVy = this.player.vy;
     this.collideGround(this.player);
-    if (this.onGround(this.player) && preCollideVy > 620) {
-      this.player.hit((preCollideVy - 620) * 0.05, "fall impact");
-    }
     this.collectLoot();
     this.collectDroppedBags();
 
@@ -694,8 +794,8 @@ class Game {
     }
   }
 
-  tryCraft(recipeIndex) {
-    const recipe = RECIPES[recipeIndex];
+  tryCraft() {
+    const recipe = RECIPES[Math.floor(rand(0, RECIPES.length))];
     const inv = this.player.inventory;
     const can = Object.entries(recipe.cost).every(([k, v]) => (inv[k] || 0) >= v);
 
@@ -713,6 +813,56 @@ class Game {
     this.loot = this.loot.filter((item) => {
       if (distSq(item.x, item.y, this.player.centerX, this.player.centerY) < 35 * 35) {
         this.player.inventory[item.type] = (this.player.inventory[item.type] || 0) + item.amount;
+
+    this.collideGround(this.player);
+    this.collectLoot();
+    this.cameraX = clamp(this.player.centerX - canvas.width / 2, 0, WORLD_WIDTH - canvas.width);
+  }
+
+  collideGround(actor) {
+    actor.x = clamp(actor.x, 0, WORLD_WIDTH - actor.w);
+    const feetXFront = actor.x + (actor.facing > 0 ? actor.w + 6 : -6);
+    const frontY = this.terrain.heightAt(clamp(feetXFront, 0, WORLD_WIDTH));
+    const curGround = this.terrain.heightAt(actor.x + actor.w / 2);
+
+    const feet = actor.y + actor.h;
+    const stepHeight = 24;
+    if (frontY < feet && feet - frontY <= stepHeight && Math.abs(actor.vx) > 10) {
+      actor.y -= feet - frontY;
+      actor.vy = 0;
+    }
+
+    if (actor.y + actor.h > curGround) {
+      actor.y = curGround - actor.h;
+      actor.vy = 0;
+    }
+  }
+
+  toggleBunker() {
+    if (this.insideBunker != null) {
+      const exit = this.terrain.bunkers[this.insideBunker];
+      this.player.x = exit.x + 10;
+      this.player.y = exit.y - 52;
+      this.insideBunker = null;
+      return;
+    }
+
+    const p = this.player;
+    for (const bunker of this.terrain.bunkers) {
+      if (Math.abs(p.centerX - (bunker.x + bunker.w / 2)) < 70 && Math.abs(p.y + p.h - bunker.y) < 30) {
+        this.insideBunker = bunker.id;
+        this.player.x = 300;
+        this.player.y = 180;
+        return;
+      }
+    }
+  }
+
+  collectLoot() {
+    const p = this.player;
+    this.loot = this.loot.filter((item) => {
+      if (distSq(item.x, item.y, p.centerX, p.centerY) < 35 * 35) {
+        p.inventory[item.type] = (p.inventory[item.type] || 0) + item.amount;
         return false;
       }
       return true;
@@ -733,6 +883,14 @@ class Game {
     }
 
     shooter.cooldown = def.cooldown;
+  tryShoot(shooter) {
+    if (shooter.cooldown > 0 || shooter.dead) return;
+    const def = WEAPONS[shooter.weapon];
+    if (shooter.mag <= 0) return;
+
+    shooter.mag -= 1;
+    shooter.cooldown = def.cooldown;
+
     const baseAngle = shooter === this.player
       ? Math.atan2(mouse.y - shooter.centerY, mouse.x + this.cameraX - shooter.centerX)
       : shooter.facing > 0 ? 0 : Math.PI;
@@ -748,6 +906,15 @@ class Game {
 
   raycastHit(shooter, angle, range, damage) {
     const step = 7;
+      const angle = baseAngle + rand(-def.spread, def.spread);
+      this.raycastHit(shooter, angle, def.range, def.damage);
+    }
+
+    this.effects.push({ x: shooter.centerX, y: shooter.centerY - 10, t: 0.08, type: "muzzle" });
+  }
+
+  raycastHit(shooter, angle, range, damage) {
+    const step = 8;
     for (let d = 0; d < range; d += step) {
       const x = shooter.centerX + Math.cos(angle) * d;
       const y = shooter.centerY + Math.sin(angle) * d;
@@ -771,9 +938,23 @@ class Game {
       for (const target of targets) {
         if (target === shooter || target.dead) continue;
         if (x > target.x && x < target.x + target.w && y > target.y && y < target.y + target.h) {
-          target.hit(damage, "gunshot");
+          target.hit(damage);
           this.effects.push({ x, y, t: 0.18, type: "blood" });
           if (target.dead) this.onKill(shooter, target);
+      if (y > this.terrain.heightAt(x)) {
+        this.effects.push({ x, y, t: 0.12, type: "impact" });
+        return;
+      }
+
+      for (const target of this.scavs.concat([this.player])) {
+        if (target === shooter || target.dead) continue;
+        if (x > target.x && x < target.x + target.w && y > target.y && y < target.y + target.h) {
+          target.damage(damage);
+          this.effects.push({ x, y, t: 0.2, type: "blood" });
+          if (target.dead && shooter === this.player) {
+            this.player.inventory.money += target.inventory.money;
+            this.player.inventory.scrap += target.inventory.scrap;
+          }
           return;
         }
       }
@@ -805,6 +986,8 @@ class Game {
           s.x = rand(120, WORLD_WIDTH - 120);
           s.y = this.terrain.heightAt(s.x) - s.h;
           s.mag = WEAPONS[s.weapon].mag;
+          s.x = rand(80, WORLD_WIDTH - 80);
+          s.y = this.terrain.heightAt(s.x) - s.h;
         }
         continue;
       }
@@ -821,6 +1004,8 @@ class Game {
         s.vx = s.facing * 85;
       }
 
+      if (Math.random() < 0.01) s.facing *= -1;
+      s.vx = s.facing * 90;
       s.vy += GRAVITY * dt;
       s.x += s.vx * dt;
       s.y += s.vy * dt;
@@ -828,89 +1013,6 @@ class Game {
 
       if (s.weapon !== "rock" && s.mag <= 0) s.reload();
     }
-  }
-
-  triggerExplosion(x, y, radius, cause = "explosion") {
-    this.explosions.push({ x, y, r: radius, t: 0.45 });
-    const targets = this.scavs.concat([this.player]);
-    for (const target of targets) {
-      if (target.dead) continue;
-      const d2 = distSq(x, y, target.centerX, target.centerY);
-      if (d2 < radius * radius) {
-        const dmg = (1 - Math.sqrt(d2) / radius) * 120;
-        target.hit(Math.max(8, dmg), cause);
-      }
-    }
-  }
-
-  updateCars(dt) {
-    for (const car of this.cars) {
-      if (car.crashed) {
-        car.fireTimer -= dt;
-        if (car.fireTimer > 0 && distSq(car.x, car.y, this.player.centerX, this.player.centerY) < 90 * 90) {
-          this.player.hit(11 * dt, "car fire");
-        }
-        if (car.fireTimer <= 0) {
-          car.crashed = false;
-          car.hp = 100;
-          car.x = rand(200, WORLD_WIDTH - 200);
-          car.y = this.terrain.heightAt(car.x) - 18;
-          car.vx = rand(70, 180) * (Math.random() > 0.5 ? 1 : -1);
-        }
-        continue;
-      }
-
-      car.x += car.vx * dt;
-      car.y = this.terrain.heightAt(car.x) - 18;
-
-      if (car.x < 60 || car.x > WORLD_WIDTH - 60) {
-        car.vx *= -1;
-      }
-
-      if (Math.abs(this.player.centerX - car.x) < 18 && Math.abs(this.player.centerY - car.y) < 24) {
-        this.player.hit(Math.abs(car.vx) * 0.2, "car crash");
-        car.crashed = true;
-        car.fireTimer = 8;
-        car.vx = 0;
-      }
-    }
-  }
-
-  updatePlanes(dt) {
-    for (const plane of this.planes) {
-      if (!plane.crashing && Math.random() < 0.0009) plane.crashing = true;
-
-      if (!plane.crashing) {
-        plane.x += plane.vx * dt;
-        if ((plane.vx > 0 && plane.x > WORLD_WIDTH + 1200) || (plane.vx < 0 && plane.x < -1200)) {
-          const fromLeft = plane.vx > 0;
-          plane.x = fromLeft ? -rand(100, 800) : WORLD_WIDTH + rand(100, 800);
-          plane.y = rand(90, 240);
-          plane.crashTargetX = rand(300, WORLD_WIDTH - 300);
-        }
-      } else {
-        plane.vy += 220 * dt;
-        plane.x += plane.vx * 0.65 * dt;
-        plane.y += plane.vy * dt;
-        const ground = this.terrain.heightAt(clamp(plane.x, 0, WORLD_WIDTH));
-        if (plane.y >= ground - 10) {
-          this.triggerExplosion(plane.x, ground - 8, 180, "plane explosion");
-          plane.crashing = false;
-          plane.vy = 0;
-          const fromLeft = Math.random() > 0.5;
-          plane.vx = fromLeft ? rand(210, 320) : -rand(210, 320);
-          plane.x = fromLeft ? -rand(100, 800) : WORLD_WIDTH + rand(100, 800);
-          plane.y = rand(90, 240);
-        }
-      }
-    }
-  }
-
-  updateExplosions(dt) {
-    this.explosions = this.explosions.filter((e) => {
-      e.t -= dt;
-      return e.t > 0;
-    });
   }
 
   updateStructures(dt) {
@@ -934,18 +1036,10 @@ class Game {
     this.player.cooldown = Math.max(0, this.player.cooldown - dt);
     if (!this.player.dead) return;
 
-    if (!this.player.deathRecorded) {
-      const cause = this.player.lastDamageCause || "unknown";
-      this.player.deathRecorded = true;
-      this.deathLog.push({ cause, t: 18 });
-      this.setNote(`You died from ${cause}`);
-    }
-
     this.player.respawnTimer -= dt;
     if (this.player.respawnTimer > 0) return;
 
     this.player.dead = false;
-    this.player.deathRecorded = false;
     this.player.hp = 100;
     const spawnX = rand(this.terrain.safeZone.x + 30, this.terrain.safeZone.x + this.terrain.safeZone.w - 30);
     this.player.x = spawnX;
@@ -973,48 +1067,58 @@ class Game {
       n.t -= dt;
       return n.t > 0;
     });
+      if (distSq(s.centerX, s.centerY, this.player.centerX, this.player.centerY) < 440 * 440) {
+        s.facing = this.player.centerX > s.centerX ? 1 : -1;
+        if (Math.random() < 0.07) this.tryShoot(s);
+      }
+    }
+  }
+
+  updatePlayerState(dt) {
+    this.player.cooldown = Math.max(0, this.player.cooldown - dt);
+
+    if (this.player.dead) {
+      this.player.respawnTimer -= dt;
+      if (this.player.respawnTimer <= 0) {
+        this.player.dead = false;
+        this.player.hp = 100;
+        const x = rand(100, WORLD_WIDTH - 100);
+        this.player.x = x;
+        this.player.y = this.terrain.heightAt(x) - this.player.h;
+        this.player.inventory = {
+          scrap: 20,
+          money: 50,
+          meds: 1,
+          pistolAmmo: 48,
+          rifleAmmo: 0,
+          shotgunAmmo: 0,
+          weaponParts: 0,
+        };
+        this.player.equip("pistol");
+        this.player.mag = 12;
+      }
+    }
+  }
+
+  updateEffects(dt) {
     this.effects = this.effects.filter((e) => {
       e.t -= dt;
       return e.t > 0;
     });
-    this.deathLog = this.deathLog.filter((d) => {
-      d.t -= dt;
-      return d.t > 0;
-    });
   }
 
   renderBunker() {
-    const bp = this.bunkerBlueprint(this.insideBunker, this.bunkerLevel);
     const darkness = 0.24 + this.bunkerLevel * 0.18;
     ctx.fillStyle = `rgba(${25 + this.bunkerLevel * 10},${28 + this.bunkerLevel * 8},${34 + this.bunkerLevel * 8},1)`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = `hsl(${210 + bp.tint}, 16%, 30%)`;
-    for (let i = 0; i < bp.rooms + 2; i += 1) {
-      ctx.fillRect(50 + i * 150, 120 + ((i + bp.tint) % 2) * 20, 72, 410);
+    ctx.fillStyle = "#3a414a";
+    for (let i = 0; i < 10; i += 1) {
+      ctx.fillRect(70 + i * 120, 120, 66, 410);
     }
 
     ctx.fillStyle = "#4e5864";
     ctx.fillRect(0, 530, canvas.width, 220);
-    ctx.fillStyle = "#6f7d8f";
-    for (const crate of bp.crates) {
-      ctx.fillRect(crate.x, 500, 28, 30);
-      if (!crate.looted && Math.abs(this.player.centerX - crate.x) < 48 && Math.abs(this.player.centerY - 500) < 60 && keys.has("KeyF")) {
-        keys.delete("KeyF");
-        crate.looted = true;
-        const gain = 20 * crate.tier;
-        this.player.inventory.scrap += gain;
-        this.player.inventory.weaponParts += crate.tier;
-        this.setNote(`Bunker crate looted (+${gain} scrap)`);
-      }
-    }
-    for (const trap of bp.traps) {
-      ctx.fillStyle = "#992b39";
-      ctx.fillRect(trap.x, 526, trap.w, 4);
-      if (Math.abs(this.player.centerX - (trap.x + trap.w / 2)) < trap.w && this.player.y + this.player.h >= 520) {
-        this.player.hit(trap.dmg * 0.05, "bunker trap");
-      }
-    }
     ctx.fillStyle = "#293039";
     ctx.fillRect(1090, 430, 96, 100);
     ctx.fillStyle = "#90a0b8";
@@ -1032,31 +1136,11 @@ class Game {
 
     this.terrain.draw(this.cameraX, this.dayTime);
 
-    for (const plane of this.planes) {
-      if (plane.x < this.cameraX - 100 || plane.x > this.cameraX + canvas.width + 100) continue;
-      const sx = plane.x - this.cameraX;
-      ctx.fillStyle = plane.crashing ? "#b6634a" : "#98a5b7";
-      ctx.fillRect(sx - 26, plane.y - 8, 52, 12);
-      ctx.fillRect(sx - 8, plane.y - 16, 16, 8);
-    }
-
-    for (const car of this.cars) {
-      if (car.x < this.cameraX - 80 || car.x > this.cameraX + canvas.width + 80) continue;
-      const sx = car.x - this.cameraX;
-      ctx.fillStyle = car.crashed ? "#7a3b31" : "#5f6b7a";
-      ctx.fillRect(sx - 18, car.y - 10, 36, 10);
-      ctx.fillRect(sx - 12, car.y - 18, 24, 8);
-      if (car.crashed) {
-        ctx.fillStyle = "#ffb35a";
-        ctx.fillRect(sx - 4, car.y - 26, 8, 10);
-      }
-    }
-
     for (const item of this.loot) {
       if (item.x < this.cameraX - 40 || item.x > this.cameraX + canvas.width + 40) continue;
       const sx = item.x - this.cameraX;
-      const icon = SPRITES.item?.[item.type];
-      drawSprite(icon, sx - 7, item.y - 10, 14, 14, item.type.includes("Ammo") ? "#edcf67" : item.type === "money" ? "#71dfa0" : "#bac7d6");
+      ctx.fillStyle = item.type.includes("Ammo") ? "#edcf67" : item.type === "money" ? "#71dfa0" : "#bac7d6";
+      ctx.fillRect(sx - 6, item.y - 8, 12, 12);
     }
 
     for (const bag of this.droppedBags) {
@@ -1082,14 +1166,6 @@ class Game {
         ctx.fillRect(sx, s.y - 16, 26, 16);
       }
     }
-
-    for (const e of this.explosions) {
-      const sx = e.x - this.cameraX;
-      ctx.fillStyle = `rgba(255,170,90,${e.t * 2})`;
-      ctx.beginPath();
-      ctx.arc(sx, e.y, e.r * (1 - e.t), 0, Math.PI * 2);
-      ctx.fill();
-    }
   }
 
   drawActors() {
@@ -1107,15 +1183,54 @@ class Game {
     for (const e of this.effects) {
       const sx = e.x - this.cameraX;
       if (e.type === "muzzle") {
-        drawSprite(SPRITES.muzzle, sx - 9, e.y - 9, 18, 18, "#ffd27c");
+        ctx.fillStyle = "#ffd27c";
+        ctx.beginPath();
+        ctx.arc(sx, e.y, 9, 0, Math.PI * 2);
+        ctx.fill();
       } else if (e.type === "impact") {
-        drawSprite(SPRITES.impact, sx - 4, e.y - 4, 8, 8, "#d6ebff");
+        ctx.fillStyle = "#d6ebff";
+        ctx.fillRect(sx - 2, e.y - 2, 4, 4);
       } else {
-        drawSprite(SPRITES.blood, sx - 4, e.y - 4, 8, 8, "#af1a34");
+        ctx.fillStyle = "#af1a34";
+  drawBunkerInterior() {
+    ctx.fillStyle = "#20252d";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#30363f";
+    for (let i = 0; i < 8; i += 1) {
+      ctx.fillRect(120 + i * 130, 120, 70, 320);
+    }
+    ctx.fillStyle = "#4b535f";
+    ctx.fillRect(0, 520, canvas.width, 200);
+    ctx.fillStyle = "#5e6774";
+    ctx.fillRect(220, 470, 120, 50);
+    ctx.fillRect(780, 470, 120, 50);
+  }
+
+  drawLoot() {
+    for (const item of this.loot) {
+      if (item.x < this.cameraX - 40 || item.x > this.cameraX + canvas.width + 40) continue;
+      const sx = item.x - this.cameraX;
+      ctx.fillStyle = item.type.includes("Ammo") ? "#f7da74" : item.type === "money" ? "#72e4a0" : "#b9c4d0";
+      ctx.fillRect(sx - 7, item.y - 9, 14, 14);
+    }
+  }
+
+  drawEffects() {
+    for (const e of this.effects) {
+      const sx = e.x - this.cameraX;
+      if (e.type === "muzzle") {
+        ctx.fillStyle = "#ffd27d";
+        ctx.beginPath();
+        ctx.arc(sx, e.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (e.type === "impact") {
+        ctx.fillStyle = "#d7ecff";
+        ctx.fillRect(sx - 2, e.y - 2, 4, 4);
+      } else {
+        ctx.fillStyle = "#b01b34";
+        ctx.fillRect(sx - 3, e.y - 3, 7, 7);
       }
     }
-
-    drawSprite(SPRITES.crosshair, mouse.x - 12, mouse.y - 12, 24, 24, "#fff");
   }
 
   drawUi() {
@@ -1140,10 +1255,9 @@ class Game {
     const craftRows = RECIPES.map((r, i) => {
       const cost = Object.entries(r.cost).map(([k, v]) => `${k}:${v}`).join(", ");
       const out = Object.entries(r.out).map(([k, v]) => `${k}+${v}`).join(", ");
-      const marker = i === this.selectedRecipe ? "👉 " : "";
-      return `<div><strong>${marker}${i + 1}. ${r.label}</strong><br><small>${cost} -> ${out}</small></div>`;
+      return `<div><strong>${i + 1}. ${r.label}</strong><br><small>${cost} -> ${out}</small></div>`;
     }).join("<hr>");
-    craftingEl.innerHTML = `<h3>Crafting ([ / ] select, V craft)</h3>${craftRows}`;
+    craftingEl.innerHTML = `<h3>Crafting (C crafts random listed recipe)</h3>${craftRows}`;
 
     mapEl.innerHTML = `
       <h3>Zone Intel</h3>
@@ -1153,9 +1267,6 @@ class Game {
       <div>Buildings: ${this.terrain.buildings.length}</div>
       <div>Resource Nodes: ${this.terrain.nodes.filter((n) => n.hp > 0).length}</div>
       <div>Hostile players alive: ${this.scavs.filter((s) => !s.dead).length}</div>
-      <div>Cars active: ${this.cars.filter((c) => !c.crashed).length}</div>
-      <div>Planes active: ${this.planes.length}</div>
-      <div>Recent death causes: ${this.deathLog.slice(-3).map((d) => d.cause).join(", ") || "none"}</div>
       <div>Your X: ${Math.round(this.player.centerX)}</div>
     `;
 
@@ -1189,9 +1300,6 @@ class Game {
 
     this.updatePlayer(dt);
     this.updateScavs(dt);
-    this.updateCars(dt);
-    this.updatePlanes(dt);
-    this.updateExplosions(dt);
     this.updateStructures(dt);
     this.updateNotifications(dt);
   }
@@ -1200,6 +1308,50 @@ class Game {
     this.drawWorld();
     this.drawActors();
     this.drawUi();
+  render() {
+    if (this.insideBunker != null) {
+      this.drawBunkerInterior();
+      this.cameraX = 0;
+    } else {
+      this.terrain.draw(this.cameraX);
+      this.drawLoot();
+    }
+
+    const pAngle = Math.atan2(mouse.y - this.player.centerY, mouse.x + this.cameraX - this.player.centerX);
+
+    for (const s of this.scavs) {
+      if (this.insideBunker != null) continue;
+      if (s.x + s.w < this.cameraX || s.x > this.cameraX + canvas.width) continue;
+      s.draw(this.cameraX, s.facing > 0 ? 0 : Math.PI, "#3b444f");
+    }
+
+    this.player.draw(this.cameraX, pAngle, "#1f2f44");
+    this.drawEffects();
+    this.renderUi();
+  }
+
+  renderUi() {
+    const p = this.player;
+    const stamina = p.crouching ? 65 : 100;
+    barsEl.textContent = `HP ${Math.round(p.hp)}/${p.maxHp} | Stamina ${stamina} | Mag ${p.mag}/${WEAPONS[p.weapon].mag}`;
+    moneyEl.textContent = `💵 ${p.inventory.money}`;
+    hotbarEl.textContent = `[1] Pistol  [2] Rifle  [3] Shotgun  | Equipped: ${WEAPONS[p.weapon].label}`;
+
+    const invRows = Object.entries(p.inventory)
+      .map(([k, v]) => `<div>${k}: <strong>${v}</strong></div>`)
+      .join("");
+    inventoryEl.innerHTML = `<h3>Inventory</h3>${invRows}<hr><small>Respawn gives a basic kit (pistol + starter supplies).</small>`;
+  }
+
+  step(dt) {
+    if (keys.has("Digit1")) this.player.equip("pistol");
+    if (keys.has("Digit2")) this.player.equip("rifle");
+    if (keys.has("Digit3")) this.player.equip("shotgun");
+
+    this.input(dt);
+    this.updatePlayerState(dt);
+    this.updateScavs(dt);
+    this.updateEffects(dt);
   }
 
   loop(ts) {
@@ -1208,6 +1360,7 @@ class Game {
     this.step(dt);
     this.render();
     requestAnimationFrame(this.loop.bind(this));
+    requestAnimationFrame(this.loop);
   }
 }
 
@@ -1226,5 +1379,4 @@ window.addEventListener("mousemove", (e) => {
 window.addEventListener("mousedown", () => keys.add("KeyE"));
 window.addEventListener("mouseup", () => keys.delete("KeyE"));
 
-bootSprites();
 new Game();
