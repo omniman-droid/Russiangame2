@@ -36,6 +36,10 @@ body {
 #money,
 #hotbar,
 #inventory,
+#crafting,
+#map,
+#help {
+  background: rgba(6, 10, 16, 0.75);
 #help {
   background: rgba(6, 10, 16, 0.7);
   border: 1px solid rgba(179, 220, 255, 0.3);
@@ -47,6 +51,8 @@ body {
 #money,
 #help,
 #inventory,
+#crafting,
+#map,
 #hotbar {
   padding: 8px 10px;
 }
@@ -56,6 +62,11 @@ body {
   left: 12px;
   bottom: 12px;
   font-size: 12px;
+  max-width: 680px;
+}
+
+#money {
+  min-width: 140px;
 }
 
 #money {
@@ -69,6 +80,12 @@ body {
   transform: translateX(-50%);
 }
 
+#inventory,
+#crafting,
+#map {
+  position: fixed;
+  right: 12px;
+  width: 300px;
 #inventory {
   position: fixed;
   right: 12px;
@@ -78,6 +95,22 @@ body {
   overflow: auto;
 }
 
+#inventory { top: 12px; }
+#crafting { top: 230px; }
+#map { top: 450px; }
+
+.hidden {
+  display: none;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.good { color: #90f2be; }
+.bad { color: #ff8f9a; }
 .hidden {
   display: none;
 }
