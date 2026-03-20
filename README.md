@@ -10,8 +10,10 @@ A browser-playable 2D snow wasteland survival game built as static HTML/CSS/JS f
 - Snow plains + mountain terrain across a wide map
 - Surface compounds + many bunker entrances
 - Multi-level bunker traversal (deeper underground)
+- Varied bunker layouts/traps/loot by bunker+level seed
 - PvP-style combat loop with hostile survivor actors
 - Invisible hitscan bullets (fast/real-feeling gunplay)
+- Roaming cars + flyover planes with crash/explosion events
 - Weapons set: rock, pistol, revolver, SMG, rifle, shotgun, sniper
 - Player vitals: health, hunger, thirst, cold, radiation
 - Loot economy: scrap, money, ammo types, meds, food/water, weapon parts

@@ -243,6 +243,7 @@ class Actor {
     this.hp = 100;
     this.kind = kind;
     this.dead = false;
+    this.deathRecorded = false;
     this.respawnTimer = 0;
     this.facing = 1;
     this.crouching = false;
@@ -252,6 +253,7 @@ class Actor {
     this.armor = 0;
     this.bounty = 0;
     this.coldRes = 0;
+    this.lastDamageCause = "unknown";
     this.inventory = {
       wood: 0, stone: 0, sulfur: 0, cloth: 0,
       scrap: 0, metalFragments: 0, weaponParts: 0,
@@ -284,9 +286,10 @@ class Actor {
     this.inventory[def.ammoType] -= take;
   }
 
-  hit(amount) {
+  hit(amount, cause = "damage") {
     if (this.dead) return;
     const dmg = Math.max(1, amount * (1 - this.armor));
+    this.lastDamageCause = cause;
     this.hp -= dmg;
     if (this.hp <= 0) {
       this.hp = 0;
@@ -343,12 +346,19 @@ class Game {
     this.droppedBags = [];
     this.structures = [];
     this.scavs = [];
+    this.cars = [];
+    this.planes = [];
+    this.explosions = [];
+    this.deathLog = [];
+    this.bunkerBlueprints = {};
 
     this.stats = { hunger: 100, thirst: 100, cold: 0, radiation: 0 };
     this.selectedRecipe = 0;
 
     this.spawnScavs(36);
     this.spawnLoot(170);
+    this.spawnCars(20);
+    this.spawnPlanes(4);
     this.last = performance.now();
 
     requestAnimationFrame(this.loop.bind(this));
@@ -380,6 +390,50 @@ class Game {
       const x = rand(80, WORLD_WIDTH - 80);
       this.loot.push({ x, y: this.terrain.heightAt(x) - 10, type: items[Math.floor(rand(0, items.length))], amount: Math.floor(rand(6, 26)) });
     }
+  }
+
+  spawnCars(count) {
+    for (let i = 0; i < count; i += 1) {
+      const x = rand(200, WORLD_WIDTH - 200);
+      this.cars.push({
+        x,
+        y: this.terrain.heightAt(x) - 18,
+        vx: rand(70, 180) * (Math.random() > 0.5 ? 1 : -1),
+        hp: 100,
+        crashed: false,
+        fireTimer: 0,
+      });
+    }
+  }
+
+  spawnPlanes(count) {
+    for (let i = 0; i < count; i += 1) {
+      const fromLeft = Math.random() > 0.5;
+      this.planes.push({
+        x: fromLeft ? -rand(100, 1200) : WORLD_WIDTH + rand(100, 1200),
+        y: rand(90, 240),
+        vx: fromLeft ? rand(210, 320) : -rand(210, 320),
+        hp: 100,
+        crashing: false,
+        vy: 0,
+        crashTargetX: rand(300, WORLD_WIDTH - 300),
+      });
+    }
+  }
+
+  bunkerBlueprint(id, level) {
+    const key = `${id}:${level}`;
+    if (this.bunkerBlueprints[key]) return this.bunkerBlueprints[key];
+    const rooms = 4 + ((id + level) % 3);
+    const traps = [];
+    const crates = [];
+    for (let i = 0; i < rooms; i += 1) {
+      if ((i + id + level) % 2 === 0) traps.push({ x: 210 + i * 180, w: 36, dmg: 24 + level * 6 });
+      crates.push({ x: 170 + i * 185, looted: false, tier: 1 + ((i + id + level) % 3) });
+    }
+    const out = { rooms, traps, crates, tint: (id * 37 + level * 23) % 70 };
+    this.bunkerBlueprints[key] = out;
+    return out;
   }
 
   onGround(actor) {
@@ -422,9 +476,10 @@ class Game {
       this.stats.radiation = clamp(this.stats.radiation - dt * 1.2, 0, 100);
     }
 
-    if (this.stats.hunger <= 0 || this.stats.thirst <= 0 || this.stats.cold > 80 || this.stats.radiation > 92) {
-      this.player.hit(5 * dt);
-    }
+    if (this.stats.hunger <= 0) this.player.hit(7 * dt, "starvation");
+    if (this.stats.thirst <= 0) this.player.hit(9 * dt, "dehydration");
+    if (this.stats.cold > 80) this.player.hit(6 * dt, "hypothermia");
+    if (this.stats.radiation > 92) this.player.hit(10 * dt, "radiation poisoning");
 
     if (keys.has("Digit8") && this.player.inventory.food > 0) {
       this.player.inventory.food -= 1;
@@ -494,7 +549,11 @@ class Game {
     this.player.vy += GRAVITY * dt;
     this.player.x += this.player.vx * dt;
     this.player.y += this.player.vy * dt;
+    const preCollideVy = this.player.vy;
     this.collideGround(this.player);
+    if (this.onGround(this.player) && preCollideVy > 620) {
+      this.player.hit((preCollideVy - 620) * 0.05, "fall impact");
+    }
     this.collectLoot();
     this.collectDroppedBags();
 
@@ -712,7 +771,7 @@ class Game {
       for (const target of targets) {
         if (target === shooter || target.dead) continue;
         if (x > target.x && x < target.x + target.w && y > target.y && y < target.y + target.h) {
-          target.hit(damage);
+          target.hit(damage, "gunshot");
           this.effects.push({ x, y, t: 0.18, type: "blood" });
           if (target.dead) this.onKill(shooter, target);
           return;
@@ -771,6 +830,89 @@ class Game {
     }
   }
 
+  triggerExplosion(x, y, radius, cause = "explosion") {
+    this.explosions.push({ x, y, r: radius, t: 0.45 });
+    const targets = this.scavs.concat([this.player]);
+    for (const target of targets) {
+      if (target.dead) continue;
+      const d2 = distSq(x, y, target.centerX, target.centerY);
+      if (d2 < radius * radius) {
+        const dmg = (1 - Math.sqrt(d2) / radius) * 120;
+        target.hit(Math.max(8, dmg), cause);
+      }
+    }
+  }
+
+  updateCars(dt) {
+    for (const car of this.cars) {
+      if (car.crashed) {
+        car.fireTimer -= dt;
+        if (car.fireTimer > 0 && distSq(car.x, car.y, this.player.centerX, this.player.centerY) < 90 * 90) {
+          this.player.hit(11 * dt, "car fire");
+        }
+        if (car.fireTimer <= 0) {
+          car.crashed = false;
+          car.hp = 100;
+          car.x = rand(200, WORLD_WIDTH - 200);
+          car.y = this.terrain.heightAt(car.x) - 18;
+          car.vx = rand(70, 180) * (Math.random() > 0.5 ? 1 : -1);
+        }
+        continue;
+      }
+
+      car.x += car.vx * dt;
+      car.y = this.terrain.heightAt(car.x) - 18;
+
+      if (car.x < 60 || car.x > WORLD_WIDTH - 60) {
+        car.vx *= -1;
+      }
+
+      if (Math.abs(this.player.centerX - car.x) < 18 && Math.abs(this.player.centerY - car.y) < 24) {
+        this.player.hit(Math.abs(car.vx) * 0.2, "car crash");
+        car.crashed = true;
+        car.fireTimer = 8;
+        car.vx = 0;
+      }
+    }
+  }
+
+  updatePlanes(dt) {
+    for (const plane of this.planes) {
+      if (!plane.crashing && Math.random() < 0.0009) plane.crashing = true;
+
+      if (!plane.crashing) {
+        plane.x += plane.vx * dt;
+        if ((plane.vx > 0 && plane.x > WORLD_WIDTH + 1200) || (plane.vx < 0 && plane.x < -1200)) {
+          const fromLeft = plane.vx > 0;
+          plane.x = fromLeft ? -rand(100, 800) : WORLD_WIDTH + rand(100, 800);
+          plane.y = rand(90, 240);
+          plane.crashTargetX = rand(300, WORLD_WIDTH - 300);
+        }
+      } else {
+        plane.vy += 220 * dt;
+        plane.x += plane.vx * 0.65 * dt;
+        plane.y += plane.vy * dt;
+        const ground = this.terrain.heightAt(clamp(plane.x, 0, WORLD_WIDTH));
+        if (plane.y >= ground - 10) {
+          this.triggerExplosion(plane.x, ground - 8, 180, "plane explosion");
+          plane.crashing = false;
+          plane.vy = 0;
+          const fromLeft = Math.random() > 0.5;
+          plane.vx = fromLeft ? rand(210, 320) : -rand(210, 320);
+          plane.x = fromLeft ? -rand(100, 800) : WORLD_WIDTH + rand(100, 800);
+          plane.y = rand(90, 240);
+        }
+      }
+    }
+  }
+
+  updateExplosions(dt) {
+    this.explosions = this.explosions.filter((e) => {
+      e.t -= dt;
+      return e.t > 0;
+    });
+  }
+
   updateStructures(dt) {
     this.structures = this.structures.filter((s) => {
       if (s.type === "campfire" && s.lit) {
@@ -792,10 +934,18 @@ class Game {
     this.player.cooldown = Math.max(0, this.player.cooldown - dt);
     if (!this.player.dead) return;
 
+    if (!this.player.deathRecorded) {
+      const cause = this.player.lastDamageCause || "unknown";
+      this.player.deathRecorded = true;
+      this.deathLog.push({ cause, t: 18 });
+      this.setNote(`You died from ${cause}`);
+    }
+
     this.player.respawnTimer -= dt;
     if (this.player.respawnTimer > 0) return;
 
     this.player.dead = false;
+    this.player.deathRecorded = false;
     this.player.hp = 100;
     const spawnX = rand(this.terrain.safeZone.x + 30, this.terrain.safeZone.x + this.terrain.safeZone.w - 30);
     this.player.x = spawnX;
@@ -827,20 +977,44 @@ class Game {
       e.t -= dt;
       return e.t > 0;
     });
+    this.deathLog = this.deathLog.filter((d) => {
+      d.t -= dt;
+      return d.t > 0;
+    });
   }
 
   renderBunker() {
+    const bp = this.bunkerBlueprint(this.insideBunker, this.bunkerLevel);
     const darkness = 0.24 + this.bunkerLevel * 0.18;
     ctx.fillStyle = `rgba(${25 + this.bunkerLevel * 10},${28 + this.bunkerLevel * 8},${34 + this.bunkerLevel * 8},1)`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = "#3a414a";
-    for (let i = 0; i < 10; i += 1) {
-      ctx.fillRect(70 + i * 120, 120, 66, 410);
+    ctx.fillStyle = `hsl(${210 + bp.tint}, 16%, 30%)`;
+    for (let i = 0; i < bp.rooms + 2; i += 1) {
+      ctx.fillRect(50 + i * 150, 120 + ((i + bp.tint) % 2) * 20, 72, 410);
     }
 
     ctx.fillStyle = "#4e5864";
     ctx.fillRect(0, 530, canvas.width, 220);
+    ctx.fillStyle = "#6f7d8f";
+    for (const crate of bp.crates) {
+      ctx.fillRect(crate.x, 500, 28, 30);
+      if (!crate.looted && Math.abs(this.player.centerX - crate.x) < 48 && Math.abs(this.player.centerY - 500) < 60 && keys.has("KeyF")) {
+        keys.delete("KeyF");
+        crate.looted = true;
+        const gain = 20 * crate.tier;
+        this.player.inventory.scrap += gain;
+        this.player.inventory.weaponParts += crate.tier;
+        this.setNote(`Bunker crate looted (+${gain} scrap)`);
+      }
+    }
+    for (const trap of bp.traps) {
+      ctx.fillStyle = "#992b39";
+      ctx.fillRect(trap.x, 526, trap.w, 4);
+      if (Math.abs(this.player.centerX - (trap.x + trap.w / 2)) < trap.w && this.player.y + this.player.h >= 520) {
+        this.player.hit(trap.dmg * 0.05, "bunker trap");
+      }
+    }
     ctx.fillStyle = "#293039";
     ctx.fillRect(1090, 430, 96, 100);
     ctx.fillStyle = "#90a0b8";
@@ -857,6 +1031,26 @@ class Game {
     }
 
     this.terrain.draw(this.cameraX, this.dayTime);
+
+    for (const plane of this.planes) {
+      if (plane.x < this.cameraX - 100 || plane.x > this.cameraX + canvas.width + 100) continue;
+      const sx = plane.x - this.cameraX;
+      ctx.fillStyle = plane.crashing ? "#b6634a" : "#98a5b7";
+      ctx.fillRect(sx - 26, plane.y - 8, 52, 12);
+      ctx.fillRect(sx - 8, plane.y - 16, 16, 8);
+    }
+
+    for (const car of this.cars) {
+      if (car.x < this.cameraX - 80 || car.x > this.cameraX + canvas.width + 80) continue;
+      const sx = car.x - this.cameraX;
+      ctx.fillStyle = car.crashed ? "#7a3b31" : "#5f6b7a";
+      ctx.fillRect(sx - 18, car.y - 10, 36, 10);
+      ctx.fillRect(sx - 12, car.y - 18, 24, 8);
+      if (car.crashed) {
+        ctx.fillStyle = "#ffb35a";
+        ctx.fillRect(sx - 4, car.y - 26, 8, 10);
+      }
+    }
 
     for (const item of this.loot) {
       if (item.x < this.cameraX - 40 || item.x > this.cameraX + canvas.width + 40) continue;
@@ -887,6 +1081,14 @@ class Game {
         ctx.fillStyle = "#4f3d2f";
         ctx.fillRect(sx, s.y - 16, 26, 16);
       }
+    }
+
+    for (const e of this.explosions) {
+      const sx = e.x - this.cameraX;
+      ctx.fillStyle = `rgba(255,170,90,${e.t * 2})`;
+      ctx.beginPath();
+      ctx.arc(sx, e.y, e.r * (1 - e.t), 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 
@@ -951,6 +1153,9 @@ class Game {
       <div>Buildings: ${this.terrain.buildings.length}</div>
       <div>Resource Nodes: ${this.terrain.nodes.filter((n) => n.hp > 0).length}</div>
       <div>Hostile players alive: ${this.scavs.filter((s) => !s.dead).length}</div>
+      <div>Cars active: ${this.cars.filter((c) => !c.crashed).length}</div>
+      <div>Planes active: ${this.planes.length}</div>
+      <div>Recent death causes: ${this.deathLog.slice(-3).map((d) => d.cause).join(", ") || "none"}</div>
       <div>Your X: ${Math.round(this.player.centerX)}</div>
     `;
 
@@ -984,6 +1189,9 @@ class Game {
 
     this.updatePlayer(dt);
     this.updateScavs(dt);
+    this.updateCars(dt);
+    this.updatePlanes(dt);
+    this.updateExplosions(dt);
     this.updateStructures(dt);
     this.updateNotifications(dt);
   }
