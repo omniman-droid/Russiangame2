@@ -1,0 +1,13 @@
+{
+  "name": "snowwasteland2",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SnowWasteland 2D static client + websocket multiplayer relay",
+  "scripts": {
+    "serve": "python3 -m http.server 8080",
+    "multiplayer": "node server/multiplayer.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
