@@ -2,18 +2,12 @@
 
 A browser-playable 2D snow wasteland survival game built as static HTML/CSS/JS for GitHub + Netlify.
 
-## Included art pack (generated)
-- The repo now includes a full starter texture pack under `assets/sprites/**` (terrain, buildings, items, characters, weapons, UI, effects).
-- The game loads these textures directly at runtime (SVG-based for easy editing/replacement).
-
 ## Gameplay features
 - Snow plains + mountain terrain across a wide map
 - Surface compounds + many bunker entrances
 - Multi-level bunker traversal (deeper underground)
-- Varied bunker layouts/traps/loot by bunker+level seed
 - PvP-style combat loop with hostile survivor actors
 - Invisible hitscan bullets (fast/real-feeling gunplay)
-- Roaming cars + flyover planes with crash/explosion events
 - Weapons set: rock, pistol, revolver, SMG, rifle, shotgun, sniper
 - Player vitals: health, hunger, thirst, cold, radiation
 - Loot economy: scrap, money, ammo types, meds, food/water, weapon parts
@@ -30,9 +24,7 @@ A browser-playable 2D snow wasteland survival game built as static HTML/CSS/JS f
 - `R` reload
 - `F` interact (bunker/loot/depth/exit)
 - `G` gather nearby node
-- `C` toggle crafting panel
-- `[` / `]` select recipe
-- `V` craft selected recipe
+- `C` toggle crafting panel (+ crafts from recipe list)
 - `B` build mode toggle
 - `T` trade in safe zone
 - `I` inventory panel
@@ -45,19 +37,42 @@ A browser-playable 2D snow wasteland survival game built as static HTML/CSS/JS f
 python3 -m http.server 8080
 ```
 Open `http://localhost:8080`.
-> Do not open `index.html` directly via `file://`; the game is designed to run over HTTP.
-
-## Multiplayer (recommended)
-Run the websocket relay and static server in two terminals:
-
-```bash
-npm install
-npm run multiplayer
-python3 -m http.server 8080
-```
-
-Open multiple browser windows to `http://localhost:8080` and they will sync players/shots over `ws://localhost:8081`.
 
 ## Netlify
 - Build command: *(none)*
 - Publish directory: `.`
+# SnowWasteland 2D (Rusty-STALKER style prototype)
+
+A complete browser-playable 2D snow wasteland survival shooter you can push to GitHub and deploy to Netlify as static files.
+
+## Features included
+- Snow + rock side-scrolling world with mountains/plains
+- Surface buildings + many bunker entrances
+- Enter/exit bunkers (`F`)
+- Player controls: `A/D` move, `S` crouch, `E` shoot, mouse aim arm, `R` reload
+- Auto-step climbing when moving into short obstacles
+- Fast invisible hitscan bullets
+- PvP-style combat loop against armed survivor actors
+- Loot drops + inventory (scrap, money, ammo, meds, parts)
+- Death + respawn with a basic kit
+- Sprite drop folder ready at `assets/sprites/`
+
+## Run locally
+Open `index.html` directly, or use a static server:
+
+```bash
+python3 -m http.server 8080
+```
+
+Then browse `http://localhost:8080`.
+
+## Netlify deploy
+- Push this repo to GitHub.
+- In Netlify, create a new site from that repo.
+- Build command: *(none)*
+- Publish directory: `.`
+
+Because this is static HTML/CSS/JS, Netlify can host it directly.
+
+## Notes
+This is an intentionally simple “crappy but playable” foundation with placeholder rendering until you drop in your art.
