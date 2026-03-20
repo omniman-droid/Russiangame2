@@ -40,6 +40,8 @@ body {
 #map,
 #help {
   background: rgba(6, 10, 16, 0.75);
+#help {
+  background: rgba(6, 10, 16, 0.7);
   border: 1px solid rgba(179, 220, 255, 0.3);
   border-radius: 8px;
   color: #e7f4ff;
@@ -67,6 +69,10 @@ body {
   min-width: 140px;
 }
 
+#money {
+  min-width: 120px;
+}
+
 #hotbar {
   position: fixed;
   left: 50%;
@@ -80,6 +86,11 @@ body {
   position: fixed;
   right: 12px;
   width: 300px;
+#inventory {
+  position: fixed;
+  right: 12px;
+  top: 12px;
+  width: 280px;
   max-height: 70vh;
   overflow: auto;
 }
@@ -100,3 +111,6 @@ body {
 
 .good { color: #90f2be; }
 .bad { color: #ff8f9a; }
+.hidden {
+  display: none;
+}
