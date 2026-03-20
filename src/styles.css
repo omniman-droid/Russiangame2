@@ -1,0 +1,83 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0e1420;
+}
+
+#game {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  image-rendering: pixelated;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+#top-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+#bars,
+#money,
+#hotbar,
+#inventory,
+#help {
+  background: rgba(6, 10, 16, 0.7);
+  border: 1px solid rgba(179, 220, 255, 0.3);
+  border-radius: 8px;
+  color: #e7f4ff;
+}
+
+#bars,
+#money,
+#help,
+#inventory,
+#hotbar {
+  padding: 8px 10px;
+}
+
+#help {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  font-size: 12px;
+}
+
+#money {
+  min-width: 120px;
+}
+
+#hotbar {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+}
+
+#inventory {
+  position: fixed;
+  right: 12px;
+  top: 12px;
+  width: 280px;
+  max-height: 70vh;
+  overflow: auto;
+}
+
+.hidden {
+  display: none;
+}
